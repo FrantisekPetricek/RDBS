@@ -1,0 +1,8 @@
+TYPE=TRIGGERS
+triggers='CREATE DEFINER=`root`@`%` TRIGGER `tri_obj_delete_before` BEFORE DELETE ON `objednavky` FOR EACH ROW BEGIN\n	DECLARE v_zam_pri CHAR(36);\n    DECLARE v_zam_zpr CHAR(36); \n    DECLARE v_zam_exp CHAR(36);\n    DECLARE v_zakaznik CHAR(36);\n    DECLARE v_adr_dor VARCHAR(50);\n    \n    SELECT CONCAT(z.jmeno, " ", z.prijmeni) INTO v_zam_pri from zamestnanci AS z JOIN objednavky AS ob ON z.id_zam = ob.zam_pri WHERE ob.cislo = OLD.cislo;\n    SELECT CONCAT(z.jmeno, " ", z.prijmeni) INTO v_zam_zpr from zamestnanci AS z JOIN objednavky AS ob ON z.id_zam = ob.zam_zpr WHERE ob.cislo = OLD.cislo;\n    SELECT CONCAT(z.jmeno, " ", z.prijmeni) INTO v_zam_exp from zamestnanci AS z JOIN objednavky AS ob ON z.id_zam = ob.zam_exp WHERE ob.cislo = OLD.cislo;\n    SELECT CONCAT(z.jmeno, " ", z.prijmeni) INTO v_zakaznik FROM zakaznici AS z JOIN objednavky AS ob ON z.id_zak = ob.id_zak WHERE ob.cislo = OLD.cislo;\n    SELECT z.adresa INTO v_adr_dor FROM zakaznici AS z JOIN objednavky AS ob ON z.id_zak = ob.id_zak WHERE ob.cislo = OLD.cislo;\n    IF(ISNULL(OLD.adr_dor)) THEN\n    INSERT INTO objednavky_vyrizene VALUES(OLD.cislo, OLD.dat_pri, v_zam_pri, v_zakaznik, v_zam_zpr, OLD.dat_exp, v_zam_exp, v_adr_dor, NOW(), USER());\n    ELSE \n    INSERT INTO objednavky_vyrizene VALUES(OLD.cislo, OLD.dat_pri, v_zam_pri, v_zakaznik, v_zam_zpr, OLD.dat_exp, v_zam_exp, OLD.adr_dor, NOW(), USER());\n    END IF;\nEND'
+sql_modes=524288
+definers='root@%'
+client_cs_names='utf8mb4'
+connection_cl_names='utf8mb4_uca1400_ai_ci'
+db_cl_names='utf8mb4_general_ci'
+created=1729629495316784

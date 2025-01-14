@@ -1,0 +1,29 @@
+version: '3.1'
+
+services:
+  mariadb:
+    image: mariadb:latest
+    container_name: mariadb-container
+    environment:
+      MYSQL_ROOT_PASSWORD: a # Nastavení hesla pro uživatele root
+    ports:
+      - "3306:3306"                      # Přesměrování portu MariaDB na localhost
+    volumes:
+      - ./mariadb-data:/var/lib/mysql    # Uložení dat MariaDB na lokálním stroji
+    networks:
+      - my-network
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:latest
+    container_name: phpmyadmin-container
+    environment:
+      PMA_HOST: mariadb-container        # Přiřazení phpMyAdmin ke kontejneru MariaDB
+      MYSQL_ROOT_PASSWORD: a             # Použití stejného hesla jako v MariaDB
+    ports:
+      - "8080:80"                        # Přesměrování portu phpMyAdmin na localhost
+    networks:
+      - my-network
+
+networks:
+  my-network:
+    driver: bridge                       # Vytvoření sítě pro komunikaci mezi kontejnery

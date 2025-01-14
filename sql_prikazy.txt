@@ -1,0 +1,242 @@
+2) 
+ a) SELECT
+
+    SELECT AVG(table_rows) AS "průměrný počet záznamů na jednu tabulku" FROM information_schema.tables WHERE table_schema = 'pc_sestavy';
+    
+    SELECT pc.nazev, pc.cena, procesory.nazev FROM pc_sestavy AS pc JOIN procesory ON pc.id_cpu = procesory.id_cpu
+        WHERE pc.cena < ( SELECT AVG(cena) FROM pc_sestavy) AND procesory.nazev = 'Intel Core i9-11900';
+
+    SELECT graficke_karty.nazev AS "Nazev grafické karty", modely.oznaceni AS "Model grafické karty", COUNT(*) AS "Pocet využitých karet" FROM graficke_karty 
+        INNER JOIN ses_gpu ON graficke_karty.id_gpu = ses_gpu.id_gpu 
+        LEFT JOIN modely ON modely.id_mod = graficke_karty.id_mod 
+        GROUP BY graficke_karty.nazev HAVING count(*) >= 10;
+        
+
+    SELECT 
+        podrizeny.jmeno AS zamestnanec,
+        nadrizeny.jmeno AS nadřízený
+    FROM 
+        management AS podrizeny
+        LEFT JOIN 
+        management AS nadrizeny
+    ON 
+        podrizeny.id_nadrizeneho = nadrizeny.id;
+
+    
+  b)VIEW
+
+    CREATE OR REPLACE VIEW Prehled_vyuzitych_zakladnich_desek AS SELECT zakladni_desky.nazev AS "Název zakladní desky", 
+    cipove_sady.oznaceni AS "Čipset", vyrobci.nazev AS "Název výrobce" ,COUNT(*) AS "Počet využích desek" 
+    FROM zakladni_desky LEFT JOIN pc_sestavy ON zakladni_desky.id_zak = pc_sestavy.id_zak 
+    RIGHT JOIN cipove_sady ON zakladni_desky.id_cip = cipove_sady.id_cip  
+    INNER JOIN vyrobci ON zakladni_desky.id_vyr = vyrobci.id_vyr GROUP BY zakladni_desky.nazev;  
+
+ c)INDEX
+
+    CREATE OR REPLACE UNIQUE INDEX unique_nazev ON pc_sestavy (nazev);
+
+        INSERT INTO `pc_sestavy` (`id_ses`, `nazev`, `id_cpu`, `id_zak`, `id_skr`, `cena`) 
+        VALUES (NULL, 'R7_58X_CORE_G', '11', '4', '2', '26321');
+
+    CREATE OR REPLACE FULLTEXT INDEX fulltext_nazev ON vyrobci (nazev, zkratka);
+
+        SELECT * FROM vyrobci WHERE MATCH(nazev,zkratka) AGAINST('micro');
+
+ d)FUNCTION
+
+    - průměrná cena pc sestavy pro vybrané GPU (podle ID)
+
+    DELIMITER //
+    CREATE OR REPLACE FUNCTION PrumerCenaPcGPU(id_graficke_karty INT) 
+    RETURNS float
+    BEGIN
+        DECLARE vysledek float;
+    
+        SELECT AVG(pc_sestavy.cena) INTO vysledek FROM pc_sestavy 
+        INNER JOIN ses_gpu ON pc_sestavy.id_ses = ses_gpu.id_ses 
+        INNER JOIN graficke_karty ON ses_gpu.id_gpu = graficke_karty.id_gpu WHERE graficke_karty.id_gpu = id_graficke_karty;
+    
+        IF vysledek IS NULL THEN 
+    	    RETURN -1;
+        ELSE
+    	    RETURN vysledek;
+        END IF;
+    END //
+
+    DELIMITER ;
+
+    SELECT PrumerCenaPcGPU(2) AS vysledek;
+
+ e)PROCEDURE
+
+    DELIMITER //
+    CREATE OR REPLACE PROCEDURE SlevaRandom()
+    BEGIN
+    DECLARE procento_sleva TINYINT;
+    DECLARE id INT;
+    DECLARE nazev VARCHAR(50);
+    DECLARE cena INT(10);
+    DECLARE sleva DECIMAL(8,2);
+    DECLARE konec BOOLEAN DEFAULT FALSE;
+
+    DECLARE cur_sleva CURSOR FOR SELECT pc.id_ses, pc.nazev, pc.cena FROM pc_sestavy AS pc;
+    
+    DECLARE EXIT HANDLER FOR NOT FOUND SET konec = TRUE;
+
+    DROP TABLE IF EXISTS SlevaRnd;
+    CREATE TABLE IF NOT EXISTS SlevaRnd (
+        id_ses INT PRIMARY KEY,
+        nazev VARCHAR(50),
+        cena INT(10),
+        procento_sleva TINYINT,
+        sleva DECIMAL(8,2),
+        cena_sleva DECIMAL(8,2)
+    );
+    
+        OPEN cur_sleva;
+    	    WHILE NOT konec DO
+        	    FETCH cur_sleva INTO id, nazev, cena;       
+        	    SET procento_sleva = FLOOR(RAND() * 5 + 1) * 5;
+        	    SET sleva = ROUND(cena / 100 * procento_sleva, 2);
+        	    INSERT INTO SlevaRnd VALUES (id, nazev, cena, procento_sleva, sleva, cena - sleva);
+    	    END WHILE;
+        CLOSE cur_sleva;
+    END//
+    DELIMITER ;
+
+    CALL SlevaRandom();
+ 
+ f)TRIGGER
+
+    DELIMITER //
+    CREATE OR REPLACE TRIGGER tri_pc_sestavy_after_update
+    AFTER UPDATE ON pc_sestavy
+    FOR EACH ROW
+	    BEGIN
+            IF(OLD.id_ses != NEW.id_ses) THEN
+                INSERT INTO pc_sestavy_zmeny VALUES(id_zme, OLD.id_ses, OLD.id_ses, NEW.id_ses , 'ID sestavy', NOW(), USER());
+            END IF;
+                 IF(OLD.nazev != NEW.nazev) THEN
+                INSERT INTO pc_sestavy_zmeny VALUES(id_zme, OLD.id_ses, OLD.nazev, NEW.nazev , 'Název', NOW(), USER());
+            END IF;
+                 IF(OLD.cena != NEW.cena) THEN
+                INSERT INTO pc_sestavy_zmeny VALUES(id_zme, OLD.id_ses, OLD.cena, NEW.cena , 'Cena', NOW(), USER());
+            END IF;
+                 IF(OLD.id_cpu != NEW.id_cpu) THEN
+                INSERT INTO pc_sestavy_zmeny VALUES(id_zme, OLD.id_ses, OLD.id_cpu, NEW.id_cpu, 'ID Procesoru', NOW(), USER());  
+            END IF;
+                 IF(OLD.id_zak != NEW.id_zak) THEN
+                INSERT INTO pc_sestavy_zmeny VALUES(id_zme, OLD.id_ses, OLD.id_zak, NEW.id_zak , 'ID Základní desky', NOW(), USER());
+            END IF;
+                 IF(OLD.id_skr != NEW.id_skr) THEN
+                INSERT INTO pc_sestavy_zmeny VALUES(id_zme, OLD.id_ses, OLD.id_skr, NEW.id_skr , 'ID Skříně', NOW(), USER());
+            END IF;
+	END//	
+    DELIMITER ;
+
+ g)TRANSACTION
+
+        DELIMITER //
+
+    CREATE OR REPLACE PROCEDURE SlevaRandom()
+    BEGIN
+        DECLARE procento_sleva TINYINT;
+        DECLARE id INT;
+        DECLARE nazev VARCHAR(50);
+        DECLARE cena DECIMAL(10,2);
+        DECLARE sleva DECIMAL(10,2);
+        DECLARE konec BOOLEAN DEFAULT FALSE;
+        DECLARE chybicka INT DEFAULT ROUND(RAND());
+
+    
+        DECLARE cur_sleva CURSOR FOR SELECT pc.id_ses, pc.nazev, pc.cena FROM pc_sestavy AS pc;
+
+        DECLARE EXIT HANDLER FOR SQLEXCEPTION 
+        BEGIN
+            ROLLBACK;
+            
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'chybicka se bloudila';
+        END;
+        
+        DECLARE EXIT HANDLER FOR NOT FOUND 
+            SET konec = TRUE;
+
+        START TRANSACTION;
+
+        DROP TABLE IF EXISTS SlevaRnd;
+        CREATE TABLE IF NOT EXISTS SlevaRnd (
+            id_ses INT PRIMARY KEY,
+            nazev VARCHAR(50),
+            cena DECIMAL(10,2),
+            procento_sleva TINYINT,
+            sleva DECIMAL(10,2),
+            cena_sleva DECIMAL(10,2)
+        );
+
+        OPEN cur_sleva;
+
+        WHILE NOT konec DO
+            FETCH cur_sleva INTO id, nazev, cena;
+            
+                SET procento_sleva = FLOOR(RAND() * 5 + 1) * 5;
+                SET sleva = ROUND(cena / 100 * procento_sleva, 2);
+                INSERT INTO SlevaRnd 
+                VALUES (id, nazev, cena, procento_sleva, sleva, cena - sleva);
+
+                IF chybicka = 1 THEN 
+                SIGNAL SQLSTATE '45000';
+                END IF;
+        END WHILE;
+        
+        -- Uzavření kurzoru po dokončení
+        CLOSE cur_sleva;
+
+        
+        -- Dokončení transakce
+        COMMIT;
+    END //
+
+    DELIMITER ;
+
+
+ h)USER
+
+    CREATE USER  'testovaci_uzivatel'@'%'    IDENTIFIED BY 'pass';
+
+    REVOKE ALL PRIVILEGES ON *.* FROM 'testovaci_uzivatel'@'%';
+    GRANT SELECT, UPDATE ON pc_sestavy.* TO 'testovaci_uzivatel'@'%';
+    
+    SHOW GRANTS FOR 'testovaci_uzivatel'@'%';
+    
+    DROP USER 'testovaci_uzivatel'@'%';
+      
+    CREATE ROLE 'read_only';
+    GRANT SELECT ON pc_sestavy.* TO 'read_only';
+
+    CREATE ROLE 'editor';
+    GRANT SELECT, UPDATE, DELETE, INSERT ON pc_sestavy.* TO 'editor';
+
+    SHOW GRANTS FOR 'read_only';
+    SHOW GRANTS FOR 'editor';
+
+    GRANT 'read_only' TO 'testovaci_uzivatel'@'%';
+    SET DEFAULT ROLE 'read_only' FOR 'testovaci_uzivatel'@'%';
+
+    GRANT 'editor' TO 'testovaci_uzivatel'@'%';
+    SET DEFAULT ROLE 'editor' FOR 'testovaci_uzivatel'@'%';
+    
+    REVOKE 'read_only' FROM 'testovaci_uzivatel'@'%';
+    REVOKE 'editor' FROM 'testovaci_uzivatel'@'%';
+
+ i)LOCK
+
+
+    docker run -it --rm --network mariadb_my-network mariadb mariadb -h mariadb-container -u root -p
+    USE pc_sestavy
+    LOCK TABLES management WRITE; - nemohou číst ani zapisovat
+    LOCK TABLES management READ; - mohou číst ale nemohou zapisovat 
+    
+
+    UNLOCK TABLES;
+   
